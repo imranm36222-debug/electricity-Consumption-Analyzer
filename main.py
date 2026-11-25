@@ -1,59 +1,54 @@
-
+import os
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+csv_path = os.path.join(BASE_DIR, "usage.csv")
+
+
 # Function 1: Load and clean CSV data
 def load_data():
-
     try:
-        df = pd.read_csv("usage.csv")
+        # header=None so files with OR without a header row both work
+        raw = pd.read_csv(csv_path, header=None, names=["Month", "Units"],
+                          skip_blank_lines=True, dtype=str)
 
-        # Check required columns
-        if "Month" not in df.columns or "Units" not in df.columns:
-            print("Error: CSV must contain Month and Units columns.")
-            return None
+        # Drop header row if present
+        if len(raw) > 0 and str(raw.iloc[0]["Month"]).strip().lower() == "month":
+            raw = raw.iloc[1:].reset_index(drop=True)
 
         valid_data = []
 
-        # Check every row
-        for index, row in df.iterrows():
-
-            row_number = index + 2
+        for index, row in raw.iterrows():
+            row_number = index + 1  # data row number (Jan = Row 1)
             month = row["Month"]
             units = pd.to_numeric(row["Units"], errors="coerce")
 
-            # Check missing month
             if pd.isna(month) or str(month).strip() == "":
                 print(f"Row {row_number} skipped: Month is missing.")
                 continue
 
-            # Check invalid or missing units
             if pd.isna(units) or not np.isfinite(units):
                 print(f"Row {row_number} skipped: invalid Units '{row['Units']}'.")
                 continue
 
-            # Check negative units
             if units < 0:
                 print(f"Row {row_number} skipped: Units cannot be negative.")
                 continue
 
-            # Store valid data
-            valid_data.append({
-                "Month": str(month).strip(),
-                "Units": float(units)
-            })
+            valid_data.append({"Month": str(month).strip(), "Units": float(units)})
 
-        clean_df = pd.DataFrame(valid_data)
+        clean_df = pd.DataFrame(valid_data, columns=["Month", "Units"])
 
-        print("\nValid rows:", len(clean_df))
+        total = clean_df["Units"].sum()
+        print(f"Valid rows: {len(clean_df)} | Total: {total:g} units")
 
         return clean_df
 
     except FileNotFoundError:
         print("Error: usage.csv file not found.")
         return None
-
     except Exception as e:
         print("Error:", e)
         return None
@@ -61,65 +56,48 @@ def load_data():
 
 # Function 2: Display electricity summary
 def show_summary(df):
-
     if df.empty:
         print("No valid data available.")
         return
 
     units = df["Units"].to_numpy()
 
-    # Calculate statistics using NumPy
     total = np.sum(units)
     average = np.mean(units)
-    highest = np.max(units)
-    lowest = np.min(units)
-    std_dev = np.std(units)
+    std_dev = np.std(units)  # population std dev -> 40.82 for 200/250/300
 
-    # Find highest and lowest months
-    highest_month = df[df["Units"] == highest]
-    lowest_month = df[df["Units"] == lowest]
+    highest_row = df.loc[df["Units"].idxmax()]
+    lowest_row = df.loc[df["Units"].idxmin()]
 
     print("\n------ ELECTRICITY SUMMARY ------")
-
-    print("Total:", total, "units")
-    print("Average:", f"{average:.2f}")
-
-    for _, row in highest_month.iterrows():
-        print("Highest:", row["Month"], f"({row['Units']:g})")
-
-    for _, row in lowest_month.iterrows():
-        print("Lowest:", row["Month"], f"({row['Units']:g})")
-
-    print("Std Dev:", f"{std_dev:.2f}")
+    print(f"Total: {total:g} units | Average: {average:.2f}")
+    print(f"Highest: {highest_row['Month']} ({highest_row['Units']:g}) | "
+          f"Lowest: {lowest_row['Month']} ({lowest_row['Units']:g})")
+    print(f"Std Dev: {std_dev:.2f}")
 
 
-# Function 3: Find above-average months
+# Function 3: Find above-average months + charts
 def above_average(df):
-
     if df.empty:
         print("No valid data available.")
         return
 
     average = np.mean(df["Units"])
-
-    # Boolean filtering
     result = df[df["Units"] > average]
 
     print("\n------ ABOVE AVERAGE MONTHS ------")
-    print(f"Average consumption: {average:.2f}")
-
     if result.empty:
-        print("No months are above average.")
+        print(f"Months above average ({average:.2f}): None")
     else:
-        for _, row in result.iterrows():
-            print(row["Month"], f"({row['Units']:g})")
+        items = ", ".join(f"{r['Month']} ({r['Units']:g})" for _, r in result.iterrows())
+        print(f"Months above average ({average:.2f}): {items}")
 
-    # Display bar and line charts
+    print("Bar chart 'Monthly Consumption' displayed")
+
     plt.figure(figsize=(8, 5))
     plt.bar(df["Month"], df["Units"])
-    plt.axhline(average, linestyle="--",
-                label="Average Consumption")
-    plt.title("Monthly Electricity Consumption - Bar Chart")
+    plt.axhline(average, linestyle="--", label="Average Consumption")
+    plt.title("Monthly Consumption")
     plt.xlabel("Month")
     plt.ylabel("Units")
     plt.legend()
@@ -127,9 +105,8 @@ def above_average(df):
 
     plt.figure(figsize=(8, 5))
     plt.plot(df["Month"], df["Units"], marker="o")
-    plt.axhline(average, linestyle="--",
-                label="Average Consumption")
-    plt.title("Monthly Electricity Consumption - Line Chart")
+    plt.axhline(average, linestyle="--", label="Average Consumption")
+    plt.title("Monthly Consumption - Line Chart")
     plt.xlabel("Month")
     plt.ylabel("Units")
     plt.legend()
@@ -140,12 +117,10 @@ def above_average(df):
 
 # Function 4: Main menu
 def main():
-
     print("================================")
     print(" ELECTRICITY CONSUMPTION ANALYZER")
     print("================================")
 
-    # Load CSV file
     df = load_data()
 
     if df is None:
@@ -156,7 +131,6 @@ def main():
         return
 
     while True:
-
         print("\n----------- MENU -----------")
         print("1. View Summary")
         print("2. Above Average Months and Charts")
@@ -166,18 +140,14 @@ def main():
 
         if choice == "1":
             show_summary(df)
-
         elif choice == "2":
             above_average(df)
-
         elif choice == "3":
             print("Thank you for using the program!")
             break
-
         else:
             print("Invalid choice! Please try again.")
 
 
-# Run the program
 if __name__ == "__main__":
     main()
